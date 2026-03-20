@@ -666,7 +666,7 @@ async function doLogin(){
   const res=await api({action:'login',city,staffId,pin});
   hideLoader();
   if(!res.success){showErr(res.error||'Login failed');return;}
-  if(res.data.role!=='EXECUTIVE'){showErr('Access denied — Executive login only');return;}
+  if(!['EXECUTIVE','SUPERVISOR','OPS_MANAGER'].includes(res.data.role)){showErr('Access denied — Executive or Area Manager login only');return;}
   session=res.data;
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('app').style.display='flex';
