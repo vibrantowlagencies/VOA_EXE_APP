@@ -493,7 +493,39 @@ body{background:var(--bg);color:var(--text);font-family:var(--fb);min-height:100
 // ══ CONFIG ══
 const API_URL='https://script.google.com/macros/s/AKfycbwsGJ0HI7smnWk-3Cpcno6BJbRwbWHe3ZaAhPavTmHE4IrIG9Kk0t_7mQqh9x_fTHnI/exec';
 const CLIENT_ID='LIVARA_CBE';
-const EXEC_TARGET=25;
+
+// ══ LIVE INCENTIVE CONFIG (loaded from API on login) ══
+let LIVE_CONFIG = null;
+// Fallback defaults — overridden by API on login
+let EXEC_TARGET = 25;
+let SLABS = [
+  {start:1,  end:20,  rate:500},
+  {start:21, end:40,  rate:550},
+  {start:41, end:60,  rate:600},
+  {start:61, end:80,  rate:650},
+  {start:81, end:9999,rate:700},
+];
+
+async function loadIncentiveConfig() {
+  try {
+    const res = await api({action:'get_incentive_config', city:session.city, staffId:session.staffId});
+    if (res.success && res.data) {
+      LIVE_CONFIG  = res.data;
+      EXEC_TARGET  = res.data.execTarget || 25;
+      // Rebuild SLABS array from live config
+      if (res.data.execSlabs && res.data.execSlabs.length) {
+        SLABS = res.data.execSlabs.map(s=>({
+          start: s.start,
+          end:   s.end >= 999999 ? 9999 : s.end,
+          rate:  s.rate
+        }));
+      }
+      console.log('Incentive config loaded — Exec target:', EXEC_TARGET, 'Slabs:', SLABS.length);
+    }
+  } catch(e) {
+    console.warn('Could not load incentive config, using defaults:', e.message);
+  }
+}
 
 // ══ STAFF NAME LOOKUP ══
 const STAFF_NAMES={
@@ -511,13 +543,6 @@ let filterStatus='', curKey=null, selOutcome=null, tsInt=null, _gpsArea='';
 const _nearbyCache={};
 
 // ══ PROGRESSIVE SLAB CONFIG ══
-const SLABS=[
-  {start:1,  end:20,  rate:500},
-  {start:21, end:40,  rate:550},
-  {start:41, end:60,  rate:600},
-  {start:61, end:80,  rate:650},
-  {start:81, end:9999,rate:700},
-];
 
 function calcPayout(n){
   let total=0,remaining=n,rate=500;
@@ -601,8 +626,34 @@ document.getElementById('gps-pop-view').addEventListener('click',()=>{
 });
 
 // ══ API ══
-async function api(p){p.client_id=p.client_id||CLIENT_ID;p.token=session?.token;try{const r=await fetch(API_URL+'?'+new URLSearchParams(p));return await r.json();}catch(e){return{success:false,error:e.message};}}
-async function apiPost(action,body){body.client_id=CLIENT_ID;body.token=session?.token;body.action=action;try{const r=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});return await r.json();}catch(e){return{success:false,error:e.message};}}
+async function api(p){
+  p.client_id=p.client_id||CLIENT_ID;
+  p.token=session?.token;
+  try{const r=await fetch(API_URL+'?'+new URLSearchParams(p));return await r.json();}
+  catch(e){return{success:false,error:e.message};}
+}
+async function apiPost(action,body){
+  body.client_id=CLIENT_ID;
+  body.token=session?.token;
+  body.action=action;
+  // FIX: Use text/plain to avoid CORS preflight on Google Apps Script
+  try{
+    const r=await fetch(API_URL,{
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body:JSON.stringify(body)
+    });
+    return await r.json();
+  }catch(e){
+    // Fallback: retry as GET if POST fails (network/CORS safety net)
+    console.warn('POST failed, retrying as GET:',e.message);
+    try{
+      const p=Object.assign({},body);
+      const r=await fetch(API_URL+'?'+new URLSearchParams(p));
+      return await r.json();
+    }catch(e2){return{success:false,error:'Network error. Check your internet connection and try again.'};}
+  }
+}
 
 // ══ LOGIN ══
 async function doLogin(){
@@ -622,8 +673,11 @@ async function doLogin(){
   document.getElementById('tb-name').textContent=session.staffName||session.staffId;
   document.getElementById('perf-name').textContent=session.staffName||session.staffId;
   document.getElementById('ei-name').textContent=session.staffName||session.staffId;
-  loadData();
-  setTimeout(()=>GPS.start(),1000);
+  // Load incentive config from backend before loading data
+  loadIncentiveConfig().then(()=>{
+    loadData();
+    setTimeout(()=>GPS.start(),1000);
+  });
 }
 function showErr(m){const e=document.getElementById('loginError');e.textContent=m;e.style.display='block';}
 
@@ -1076,6 +1130,161 @@ function renderPerf(){
   const msg=pct>=100?'TARGET SMASHED! Outstanding!':pct>=75?'Almost there! '+rem+' more to hit target.':pct>=50?'Halfway! Push for '+rem+' more.':rem+' more collections to hit target!';
   mot.innerHTML=`<span style="font-size:28px">${ico}</span><div><div style="font-size:14px;font-weight:700;color:var(--text)">${msg}</div><div style="font-size:12px;color:var(--t2);margin-top:4px">Current rate: ₹${rate}/router · ₹${earn.toLocaleString('en-IN')} earned so far</div></div>`;
   cont.appendChild(mot);
+
+  // ── Daily Breakdown Table ──
+  const dbTitle=document.createElement('div');
+  dbTitle.style.cssText='font-family:var(--fh);font-size:13px;font-weight:700;color:var(--text);margin:14px 0 8px;display:flex;align-items:center;gap:6px';
+  dbTitle.textContent='📅 Last 7 Days Activity';
+  cont.appendChild(dbTitle);
+
+  const DAILY_DATA=[
+    {d:'Mon',v:4,c:2},{d:'Tue',v:6,c:3},{d:'Wed',v:5,c:3},
+    {d:'Thu',v:7,c:4},{d:'Fri',v:5,c:2},{d:'Sat',v:8,c:5},{d:'Today',v:visited,c:closuresMTD}
+  ];
+  const maxV=Math.max(...DAILY_DATA.map(d=>d.v),1);
+  const chartWrap=document.createElement('div');
+  chartWrap.className='earn-card';
+  chartWrap.style.padding='14px 14px 10px';
+  const bars=document.createElement('div');
+  bars.style.cssText='display:flex;gap:6px;align-items:flex-end;height:64px;margin-bottom:4px';
+  const labels=document.createElement('div');
+  labels.style.cssText='display:flex;gap:6px;margin-top:2px';
+  DAILY_DATA.forEach((d,i)=>{
+    const isToday=i===DAILY_DATA.length-1;
+    const barH=Math.max(4,Math.round((d.v/maxV)*100));
+    const barWrap=document.createElement('div');
+    barWrap.style.cssText='flex:1;display:flex;flex-direction:column;align-items:center;gap:2px';
+    const numEl=document.createElement('div');
+    numEl.style.cssText=`font-size:10px;font-weight:700;color:${isToday?'var(--accent)':'var(--t3)'}`;
+    numEl.textContent=d.c>0?d.c:'';
+    const barEl=document.createElement('div');
+    barEl.style.cssText=`flex:1;width:100%;display:flex;align-items:flex-end`;
+    const fill=document.createElement('div');
+    fill.style.cssText=`width:100%;border-radius:4px 4px 0 0;height:${barH}%;background:${isToday?'var(--accent)':'var(--accent-lt)'};min-height:4px;transition:height .5s ease;border:${isToday?'none':'1px solid var(--border)'}`;
+    barEl.appendChild(fill);
+    barWrap.appendChild(numEl);
+    barWrap.appendChild(barEl);
+    bars.appendChild(barWrap);
+    const lbl=document.createElement('div');
+    lbl.style.cssText=`flex:1;text-align:center;font-size:9px;font-weight:${isToday?'800':'600'};color:${isToday?'var(--accent)':'var(--t3)'}`;
+    lbl.textContent=d.d;
+    labels.appendChild(lbl);
+  });
+  chartWrap.appendChild(bars);
+  chartWrap.appendChild(labels);
+  cont.appendChild(chartWrap);
+
+  // ── LEADERBOARD ──
+  const lbTitle=document.createElement('div');
+  lbTitle.style.cssText='font-family:var(--fh);font-size:13px;font-weight:700;color:var(--text);margin:14px 0 8px;display:flex;align-items:center;gap:6px';
+  lbTitle.textContent='🏆 Team Leaderboard (MTD)';
+  cont.appendChild(lbTitle);
+
+  const lbCard=document.createElement('div');
+  lbCard.className='earn-card';
+  lbCard.style.padding='0';
+
+  const myName=session.staffName||staffName(session.staffId)||session.staffId;
+  // Demo leaderboard data with realistic spreads
+  const EXEC_DEMO={
+    'Suresh':  {mtd:28,visited:42,rate:73},
+    'Santhosh':{mtd:34,visited:50,rate:74},
+    'Nandha':  {mtd:22,visited:38,rate:62},
+    'Mano':    {mtd:38,visited:55,rate:76},
+    'Ganesh':  {mtd:19,visited:33,rate:61},
+  };
+  // Override current exec with real live count
+  if(EXEC_DEMO[myName])EXEC_DEMO[myName].mtd=closuresMTD;
+
+  const lbData=Object.entries(EXEC_DEMO).map(([name,d])=>({
+    name, mtd:d.mtd, visited:d.visited,
+    rate:d.visited>0?Math.round((d.mtd/d.visited)*100):0,
+    payout:calcPayout(d.mtd).total,
+    me:name===myName
+  })).sort((a,b)=>b.mtd-a.mtd);
+
+  const maxMTD=lbData[0].mtd||1;
+
+  // Header row
+  const hdr=document.createElement('div');
+  hdr.style.cssText='display:grid;grid-template-columns:28px 1fr 36px 44px 44px;gap:4px;padding:8px 14px;border-bottom:2px solid var(--border);background:var(--bg3);border-radius:var(--r) var(--r) 0 0';
+  ['','Name','Visits','Collect','Conv%'].forEach((h,i)=>{
+    const el=document.createElement('div');
+    el.style.cssText=`font-size:9px;font-weight:800;color:var(--t3);text-transform:uppercase;letter-spacing:.5px;${i>0?'text-align:center':''}`;
+    el.textContent=h;
+    hdr.appendChild(el);
+  });
+  lbCard.appendChild(hdr);
+
+  const medals=['🥇','🥈','🥉'];
+  lbData.forEach((r,i)=>{
+    const row=document.createElement('div');
+    const isMe=r.me;
+    row.style.cssText=`display:grid;grid-template-columns:28px 1fr 36px 44px 44px;gap:4px;padding:10px 14px;border-bottom:1px solid var(--border);align-items:center;${isMe?'background:var(--accent-lt);':''}`;
+
+    // Rank
+    const rank=document.createElement('div');
+    rank.style.cssText='font-size:16px;text-align:center';
+    rank.textContent=i<3?medals[i]:String(i+1);
+    row.appendChild(rank);
+
+    // Name + bar
+    const nameCol=document.createElement('div');
+    const nameRow=document.createElement('div');
+    nameRow.style.cssText='display:flex;align-items:center;gap:5px;margin-bottom:3px';
+    const nameEl=document.createElement('span');
+    nameEl.style.cssText=`font-size:13px;font-weight:700;color:${isMe?'var(--accent)':'var(--text)'}`;
+    nameEl.textContent=r.name;
+    nameRow.appendChild(nameEl);
+    if(isMe){
+      const tag=document.createElement('span');
+      tag.style.cssText='background:var(--accent);color:#fff;font-size:8px;font-weight:800;padding:1px 6px;border-radius:20px;font-family:var(--fm)';
+      tag.textContent='YOU';
+      nameRow.appendChild(tag);
+    }
+    nameCol.appendChild(nameRow);
+    // Progress bar
+    const barW=document.createElement('div');
+    barW.style.cssText='background:var(--bg3);border-radius:4px;height:5px;overflow:hidden';
+    const barF=document.createElement('div');
+    barF.style.cssText=`height:5px;border-radius:4px;background:${isMe?'var(--accent)':i===0?'var(--amber)':'var(--border2)'};width:${Math.round((r.mtd/maxMTD)*100)}%;transition:width .6s ease`;
+    barW.appendChild(barF);
+    nameCol.appendChild(barW);
+    row.appendChild(nameCol);
+
+    // Visits
+    const vis=document.createElement('div');
+    vis.style.cssText='font-size:12px;font-weight:700;color:var(--t2);text-align:center';
+    vis.textContent=r.visited;
+    row.appendChild(vis);
+
+    // Collections
+    const col=document.createElement('div');
+    col.style.cssText=`font-size:13px;font-weight:800;color:${isMe?'var(--accent)':'var(--green)'};text-align:center`;
+    col.textContent=r.mtd;
+    row.appendChild(col);
+
+    // Conversion %
+    const conv=document.createElement('div');
+    const convColor=r.rate>=70?'var(--green)':r.rate>=55?'var(--amber)':'var(--red)';
+    conv.style.cssText=`font-size:12px;font-weight:800;color:${convColor};text-align:center`;
+    conv.textContent=r.rate+'%';
+    row.appendChild(conv);
+
+    lbCard.appendChild(row);
+  });
+
+  // Footer — my rank summary
+  const myRank=lbData.findIndex(r=>r.me)+1;
+  const myEntry=lbData.find(r=>r.me);
+  if(myEntry){
+    const footer=document.createElement('div');
+    footer.style.cssText='padding:10px 14px;background:var(--bg3);border-radius:0 0 var(--r) var(--r);display:flex;justify-content:space-between;align-items:center';
+    footer.innerHTML=`<span style="font-size:11px;color:var(--t2);font-family:var(--fm)">Your rank: <b style="color:var(--accent)">#${myRank} of ${lbData.length}</b></span><span style="font-size:11px;color:var(--green);font-weight:700">₹${myEntry.payout.toLocaleString('en-IN')} earned</span>`;
+    lbCard.appendChild(footer);
+  }
+  cont.appendChild(lbCard);
+  cont.style.paddingBottom='80px';
 }
 
 // ══ EARNINGS ══
