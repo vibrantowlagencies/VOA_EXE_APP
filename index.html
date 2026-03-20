@@ -305,8 +305,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--fb);min-height:100
 .spinner{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .loading-text{font-family:var(--fm);font-size:13px;color:var(--t2)}
-#toast{position:fixed;bottom:72px;left:50%;transform:translateX(-50%) translateY(80px);z-index:400;background:var(--text);color:#fff;border-radius:14px;padding:13px 22px;font-size:14px;font-weight:500;white-space:nowrap;box-shadow:0 8px 32px rgba(0,0,0,.12);transition:transform .3s cubic-bezier(.4,0,.2,1);pointer-events:none}
-#toast.on{transform:translateX(-50%) translateY(0)}
+#toast{position:fixed;bottom:76px;left:50%;transform:translateX(-50%) translateY(140px);z-index:400;background:var(--text);color:#fff;border-radius:14px;padding:13px 22px;font-size:14px;font-weight:500;white-space:nowrap;box-shadow:0 8px 32px rgba(0,0,0,.12);transition:transform .3s cubic-bezier(.4,0,.2,1);pointer-events:none;visibility:hidden}
+#toast.on{transform:translateX(-50%) translateY(0);visibility:visible}
 #toast.ok{background:var(--green)}
 #toast.er{background:var(--red)}
 </style>
@@ -494,6 +494,16 @@ body{background:var(--bg);color:var(--text);font-family:var(--fb);min-height:100
 const API_URL='https://script.google.com/macros/s/AKfycbwsGJ0HI7smnWk-3Cpcno6BJbRwbWHe3ZaAhPavTmHE4IrIG9Kk0t_7mQqh9x_fTHnI/exec';
 const CLIENT_ID='LIVARA_CBE';
 const EXEC_TARGET=25;
+
+// ══ STAFF NAME LOOKUP ══
+const STAFF_NAMES={
+  'TC_001':'Jamuna','TC_002':'Sudha','TC_003':'Sankari',
+  'TC_004':'Sabitha','TC_005':'Nithya','TC_006':'Priya','TC_007':'Jenifer',
+  'EX_001':'Suresh','EX_002':'Santhosh','EX_003':'Nandha',
+  'EX_004':'Mano','EX_005':'Ganesh',
+  'AD_001':'Arun','SV_001':'Gawtham','OW_001':'Stalin',
+};
+function staffName(id){return id?STAFF_NAMES[id]||id:'';}
 
 // ══ STATE ══
 let session=null, myCases=[], visitLog=[], pendingData=[], storeQueue=[];
@@ -719,11 +729,11 @@ function makeAccountCard(c){
     </div>
     <div class="ac-meta">📱 ${esc(c.mobile||c.phone||'—')} · 📍 ${esc(c.area||'')}</div>
     ${c.apptDate?`<div class="ac-appt">📅 ${esc(c.apptDate)}${c.apptTime?' · ⏰ '+esc(c.apptTime):''}</div>`:''}
-    ${(c.tcRemark||c.tcRem)?`<div class="tc-tag">🗣 TC: ${esc(c.tcRemark||c.tcRem)}</div>`:''}
+    ${(c.tcRemark||c.tcRem)?`<div class="tc-tag">🗣 ${esc(c.tcName||staffName(c.assignedTcId)||'TC')}: ${esc(c.tcRemark||c.tcRem)}</div>`:''}
     <div class="ac-actions">
       <button class="ac-btn ab-call" onclick="event.stopPropagation();callNum('${esc(c.mobile||c.phone||'')}')">📞</button>
       <button class="ac-btn ab-wa"   onclick="event.stopPropagation();openWA('${esc(c.mobile||c.phone||'')}','${esc(c.name||'')}','${esc(c.accountNo||c.acc||'')}')">💬</button>
-      <button class="ac-btn ab-map"  onclick="event.stopPropagation();navigate('${esc(c.address||c.addr||'')}')">🗺</button>
+      <button class="ac-btn ab-map"  onclick="event.stopPropagation();navigate('${esc(c.address||c.addr||'')}')">🧭 Navigate</button>
       <button class="ac-btn ab-log"  onclick="event.stopPropagation();openCard('${esc(c.accountNo||c.acc||'')}')">📝 Log Visit</button>
     </div>`;
   return card;
@@ -757,7 +767,7 @@ function openCard(accNo){
   acts.innerHTML=`
     <button class="abtn call" onclick="callNum('${esc(phone)}')">📞 Call</button>
     <button class="abtn wa"   onclick="openWA('${esc(phone)}','${esc(c.name||'')}','${esc(accNo)}')">💬 WA</button>
-    <button class="abtn map"  onclick="navigate('${esc(addr)}')">🗺 Maps</button>
+    <button class="abtn map"  onclick="navigate('${esc(addr)}')">🧭 Navigate</button>
     <button class="abtn log"  onclick="openLogForm('${esc(accNo)}')">📝 Log Visit</button>`;
   body.appendChild(acts);
   // Strikes
@@ -770,7 +780,8 @@ function openCard(accNo){
   // TC Bridge
   if(c.tcRemark||c.tcRem){
     const bridge=document.createElement('div');bridge.className='tc-bridge';
-    bridge.innerHTML=`<span style="font-size:20px;flex-shrink:0">🗣</span><div><div class="tc-br-lbl">TC Handover${c.assignedTcId?' — '+esc(c.assignedTcId):''}</div><div class="tc-br-val">${esc(c.tcRemark||c.tcRem||'')}</div></div>`;
+    const tcDisplay=c.tcName||(c.assignedTcId?staffName(c.assignedTcId):'Telecaller');
+    bridge.innerHTML=`<span style="font-size:20px;flex-shrink:0">🗣</span><div><div class="tc-br-lbl">TC Handover — ${esc(tcDisplay)}</div><div class="tc-br-val">${esc(c.tcRemark||c.tcRem||'')}</div></div>`;
     body.appendChild(bridge);
   }
   showSheet();
@@ -951,10 +962,10 @@ async function openNearbyPending(area,fromGPS){
     card.innerHTML=`
       <div class="nc-top"><div><div class="nc-name">${esc(c.name||'—')}</div><div class="nc-acc">${esc(accNo)}</div></div><span class="nc-days ${dayCls}">${days}d</span></div>
       <div class="nc-addr">📍 ${esc(c.address||c.addr||c.area||'')}</div>
-      ${c.tcRemark||c.tcRem?`<div class="tc-tag">🗣 TC: ${esc(c.tcRemark||c.tcRem)}</div>`:''}
+      ${c.tcRemark||c.tcRem?`<div class="tc-tag">🗣 ${esc(c.tcName||staffName(c.assignedTcId)||'TC')}: ${esc(c.tcRemark||c.tcRem)}</div>`:''}
       <div class="nc-actions">
         <button class="nc-btn nc-call" onclick="callNum('${esc(c.mobile||c.phone||'')}')">📞 Call</button>
-        <button class="nc-btn nc-nav"  onclick="navigate('${esc(c.address||c.area||'')}')">🗺 Map</button>
+        <button class="nc-btn nc-nav"  onclick="navigate('${esc(c.address||c.area||'')}')">🧭 Navigate</button>
         <button class="nc-btn nc-log"  onclick="collectNearby('${esc(accNo)}','${esc(c.name||'')}','${esc(c.area||'')}')">📝 Log</button>
       </div>`;
     body.appendChild(card);
@@ -1012,7 +1023,7 @@ function openRouteOpt(){
     body.appendChild(block);
   });
   const allBtn=document.createElement('button');allBtn.className='route-open-maps';
-  allBtn.innerHTML='🗺 Start Full Route in Google Maps';
+  allBtn.innerHTML='🧭 Start Full Route in Google Maps';
   allBtn.addEventListener('click',()=>openMapsGroup(todayAppts));
   body.appendChild(allBtn);
   showSheet();
@@ -1036,6 +1047,7 @@ function parseTime(t){
 function renderPerf(){
   const closuresMTD=myCases.filter(c=>c.status==='Collected').length;
   const visited=myCases.filter(c=>c.status!=='Appt Fixed'&&c.status!=='Fresh').length;
+  const myDisplayName=session.staffName||staffName(session.staffId)||session.staffId;
   const pct=Math.min(100,Math.round((closuresMTD/EXEC_TARGET)*100));
   const rem=Math.max(0,EXEC_TARGET-closuresMTD);
   const {total:earn,rate}=calcPayout(closuresMTD);
@@ -1116,10 +1128,10 @@ function loadEarnings(){
   cont.appendChild(sc);
   // Leaderboard (demo)
   const lb=document.createElement('div');lb.className='earn-card';lb.innerHTML='<div class="earn-card-title">🏆 Team Leaderboard (MTD)</div>';
-  const myName=session.staffName||session.staffId;
+  const myName=session.staffName||staffName(session.staffId)||session.staffId;
   const lbData=[
     {name:myName,closures:closuresMTD,me:true},
-    ...['Suresh','Santhosh','Nandha','Mano','Ganesh'].filter(n=>n!==myName).map((n,i)=>({name:n,closures:Math.max(0,closuresMTD+[4,-2,6,-1,3][i]),me:false}))
+    ...['EX_002','EX_003','EX_004','EX_005'].filter(id=>staffName(id)!==myName).map((id,i)=>({name:staffName(id)||id,closures:Math.max(0,closuresMTD+[4,-2,6,-1][i]),me:false}))
   ].sort((a,b)=>b.closures-a.closures);
   const maxC=lbData[0].closures||1;
   lbData.forEach((r,i)=>{
@@ -1180,14 +1192,14 @@ function demoCases(){
   const today=new Date().toISOString().slice(0,10);
   const yesterday=new Date(Date.now()-86400000).toISOString().slice(0,10);
   return[
-    {accountNo:'101000500001',name:'Rajesh Kumar',mobile:'9876543210',address:'12 RS Puram Main Rd',area:'RS Puram',city:'CBE',status:'Appt Fixed',batchNo:'VOA_MAR_2026_1',strikeCount:0,apptDate:today,apptTime:'10:30 AM',tcRemark:'Customer available morning',assignedTcId:'TC_001'},
-    {accountNo:'101000500002',name:'Meena Devi',mobile:'9811344502',address:'12 West Veli St, RS Puram',area:'RS Puram',city:'CBE',status:'Appt Fixed',batchNo:'VOA_MAR_2026_1',strikeCount:0,apptDate:today,apptTime:'2:00 PM',tcRemark:'Gate code 4512, 3rd floor',assignedTcId:'TC_002'},
-    {accountNo:'101000500003',name:'Murugan Selvam',mobile:'9843210987',address:'8 Gandhipuram Ring Rd',area:'Gandhipuram',city:'CBE',status:'Appt Fixed',batchNo:'VOA_MAR_2026_1',strikeCount:0,apptDate:today,apptTime:'4:30 PM',tcRemark:'2nd floor flat no 4',assignedTcId:'TC_001'},
-    {accountNo:'101000500004',name:'Kavitha Rajan',mobile:'9791234567',address:'37 Nehru St, Singanallur',area:'Singanallur',city:'CBE',status:'Not Visited',batchNo:'VOA_MAR_2026_1',strikeCount:2,apptDate:'',tcRemark:'Try Sunday morning only',assignedTcId:'TC_003'},
-    {accountNo:'101000500005',name:'Arun Prakash',mobile:'9876511223',address:'14 4th Cross St, Gandhipuram',area:'Gandhipuram',city:'CBE',status:'Rescheduled',batchNo:'VOA_MAR_2026_1',strikeCount:0,apptDate:yesterday,tcRemark:'Customer agreed to give router',execRemark:'Not at home yesterday',assignedTcId:'TC_001'},
-    {accountNo:'101000500006',name:'Priya Darshini',mobile:'9384055678',address:'8/3 North Kovai Rd',area:'Coimbatore North',city:'CBE',status:'Issue',batchNo:'VOA_MAR_2026_1',strikeCount:0,tcRemark:'Junction box missing outside',assignedTcId:'TC_003'},
-    {accountNo:'101000500007',name:'Lakshmi R',mobile:'9744288001',address:'19 West Periasamy Rd, RS Puram',area:'RS Puram',city:'CBE',status:'Not Visited',batchNo:'VOA_MAR_2026_2',strikeCount:0,apptDate:yesterday,tcRemark:'Confirmed over phone',assignedTcId:'TC_001'},
-    {accountNo:'101000500008',name:'Senthilkumar R',mobile:'9744311200',address:'22 Krishnarayapuram Rd',area:'Ganapathy',city:'CBE',status:'Not Visited',batchNo:'VOA_MAR_2026_2',strikeCount:1,tcRemark:'Busy weekdays',assignedTcId:'TC_002'},
+    {accountNo:'101000500001',name:'Rajesh Kumar',mobile:'9876543210',address:'12 RS Puram Main Rd',area:'RS Puram',city:'CBE',status:'Appt Fixed',batchNo:'VOA_MAR_2026_1',strikeCount:0,apptDate:today,apptTime:'10:30 AM',tcRemark:'Customer available morning',assignedTcId:'TC_001',tcName:'Jamuna'},
+    {accountNo:'101000500002',name:'Meena Devi',mobile:'9811344502',address:'12 West Veli St, RS Puram',area:'RS Puram',city:'CBE',status:'Appt Fixed',batchNo:'VOA_MAR_2026_1',strikeCount:0,apptDate:today,apptTime:'2:00 PM',tcRemark:'Gate code 4512, 3rd floor',assignedTcId:'TC_002',tcName:'Sudha'},
+    {accountNo:'101000500003',name:'Murugan Selvam',mobile:'9843210987',address:'8 Gandhipuram Ring Rd',area:'Gandhipuram',city:'CBE',status:'Appt Fixed',batchNo:'VOA_MAR_2026_1',strikeCount:0,apptDate:today,apptTime:'4:30 PM',tcRemark:'2nd floor flat no 4',assignedTcId:'TC_001',tcName:'Jamuna'},
+    {accountNo:'101000500004',name:'Kavitha Rajan',mobile:'9791234567',address:'37 Nehru St, Singanallur',area:'Singanallur',city:'CBE',status:'Not Visited',batchNo:'VOA_MAR_2026_1',strikeCount:2,apptDate:'',tcRemark:'Try Sunday morning only',assignedTcId:'TC_003',tcName:'Sankari'},
+    {accountNo:'101000500005',name:'Arun Prakash',mobile:'9876511223',address:'14 4th Cross St, Gandhipuram',area:'Gandhipuram',city:'CBE',status:'Rescheduled',batchNo:'VOA_MAR_2026_1',strikeCount:0,apptDate:yesterday,tcRemark:'Customer agreed to give router',execRemark:'Not at home yesterday',assignedTcId:'TC_001',tcName:'Jamuna'},
+    {accountNo:'101000500006',name:'Priya Darshini',mobile:'9384055678',address:'8/3 North Kovai Rd',area:'Coimbatore North',city:'CBE',status:'Issue',batchNo:'VOA_MAR_2026_1',strikeCount:0,tcRemark:'Junction box missing outside',assignedTcId:'TC_003',tcName:'Sankari'},
+    {accountNo:'101000500007',name:'Lakshmi R',mobile:'9744288001',address:'19 West Periasamy Rd, RS Puram',area:'RS Puram',city:'CBE',status:'Not Visited',batchNo:'VOA_MAR_2026_2',strikeCount:0,apptDate:yesterday,tcRemark:'Confirmed over phone',assignedTcId:'TC_001',tcName:'Jamuna'},
+    {accountNo:'101000500008',name:'Senthilkumar R',mobile:'9744311200',address:'22 Krishnarayapuram Rd',area:'Ganapathy',city:'CBE',status:'Not Visited',batchNo:'VOA_MAR_2026_2',strikeCount:1,tcRemark:'Busy weekdays',assignedTcId:'TC_002',tcName:'Sudha'},
   ];
 }
 
