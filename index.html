@@ -503,21 +503,16 @@ const CLIENT_ID='LIVARA_CBE';
 // ══ LIVE INCENTIVE CONFIG (loaded from API on login) ══
 let LIVE_CONFIG = null;
 // Fallback defaults — overridden by API on login
-let EXEC_TARGET = 25;
-let SLABS = [
-  {start:1,  end:20,  rate:500},
-  {start:21, end:40,  rate:550},
-  {start:41, end:60,  rate:600},
-  {start:61, end:80,  rate:650},
-  {start:81, end:9999,rate:700},
-];
+let EXEC_TARGET = null;  // Set by API — no hardcode
+let SLABS = [];  // Set by API — no hardcode
 
 async function loadIncentiveConfig() {
   try {
     const res = await api({action:'get_incentive_config', city:session.city, staffId:session.staffId});
     if (res.success && res.data) {
       LIVE_CONFIG  = res.data;
-      EXEC_TARGET  = res.data.execTarget || 25;
+      EXEC_TARGET  = res.data.execTarget;
+      if(!EXEC_TARGET){ EXEC_TARGET=null; console.error('[Config] execTarget missing from API'); }
       // Rebuild SLABS array from live config
       if (res.data.execSlabs && res.data.execSlabs.length) {
         SLABS = res.data.execSlabs.map(s=>({
@@ -552,6 +547,7 @@ const _nearbyCache={};
 
 function calcPayout(n){
   let total=0,remaining=n,rate=500;
+  if(!SLABS.length || EXEC_TARGET===null){ console.error('[Config] Incentive config not loaded'); return; }
   for(const s of SLABS){
     if(remaining<=0)break;
     const cap=s.end-s.start+1;
