@@ -512,7 +512,7 @@ async function loadIncentiveConfig() {
     if (res.success && res.data) {
       LIVE_CONFIG  = res.data;
       EXEC_TARGET  = res.data.execTarget;
-      if(!EXEC_TARGET){ EXEC_TARGET=null; console.error('[Config] execTarget missing from API'); }
+      if(!EXEC_TARGET && EXEC_TARGET !== 0){ EXEC_TARGET=null; console.error('[Config] execTarget missing from API'); }
       // Rebuild SLABS array from live config
       if (res.data.execSlabs && res.data.execSlabs.length) {
         SLABS = res.data.execSlabs.map(s=>({
